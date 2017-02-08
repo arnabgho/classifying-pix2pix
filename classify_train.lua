@@ -10,7 +10,7 @@ util = paths.dofile('util/util.lua')
 require 'image'
 require 'models'
 local model_utils = require 'util.model_utils'
-
+cudnn=require 'cudnn'
 opt = {
    DATA_ROOT = '',         -- path to images (should have subfolders 'train', 'val', etc)
    batchSize = 1,          -- # images in batch
@@ -156,8 +156,8 @@ else
   netD = defineD(input_nc, output_nc, ndf)
 end
 
-print(G)
-print(netD)
+--print(G)
+--print(netD)
 
 
 --local criterion = nn.BCECriterion()
@@ -192,7 +192,11 @@ if opt.gpu > 0 then
    real_B = real_B:cuda(); fake_B = fake_B:cuda();
    real_AB = real_AB:cuda(); fake_AB = fake_AB:cuda();
    if opt.cudnn==1 then
-      netG = util.cudnn(netG); netD = util.cudnn(netD);
+      --netG = util.cudnn(netG); 
+      netD = util.cudnn(netD);
+      for k,net in pairs(G) do
+          G[k]=util.cudnn(net)
+      end
    end
    netD:cuda();  criterion:cuda(); criterionAE:cuda();
    for k,net in pairs(G) do net:cuda() end
@@ -227,7 +231,7 @@ function createRealFake()
     end
     
     -- create fake
-    for i in 1,ngen do
+    for i=1,ngen do
         fake_B[i] = G['netG'..i]:forward(real_A)
         if opt.condition_GAN==1 then
             fake_AB[i] = torch.cat(real_A,fake_B[i],2)
@@ -242,7 +246,7 @@ end
 -- create closure to evaluate f(X) and df/dX of discriminator
 local fDx = function(x)
     netD:apply(function(m) if torch.type(m):find('Convolution') then m.bias:zero() end end)
-    for i in 1,ngen do 
+    for i=1,ngen do 
         G['netG'..i]:apply(function(m) if torch.type(m):find('Convolution') then m.bias:zero() end end)
     end
     gradParametersD:zero()
@@ -257,12 +261,12 @@ local fDx = function(x)
     local errD_real = criterion:forward(output, label)
     local df_do = criterion:backward(output, label)
     netD:backward(real_AB, df_do)
-    
+    local errD_fake=0 
     -- Fake
-    for i in 1,ngen do
+    for i=1,ngen do
         local output = netD:forward(fake_AB[i])
         label:fill(fake_labels[i])
-        local errD_fake = criterion:forward(output, label)
+        errD_fake = errD_fake+ criterion:forward(output, label)
         local df_do = criterion:backward(output, label)
         netD:backward(fake_AB[i], df_do)
     end
@@ -274,7 +278,7 @@ end
 -- create closure to evaluate f(X) and df/dX of generator
 local fGx = function(x)
     netD:apply(function(m) if torch.type(m):find('Convolution') then m.bias:zero() end end)
-    for i in 1,ngen do
+    for i=1,ngen do
         G['netG'..i]:apply(function(m) if torch.type(m):find('Convolution') then m.bias:zero() end end)
     end
     gradParametersG:zero()
@@ -284,39 +288,38 @@ local fGx = function(x)
     if opt.gpu>0 then 
     	df_dg = df_dg:cuda();
     end
-    
-    if opt.use_GAN==1 then
-       local output = netD.output -- netD:forward{input_A,input_B} was already executed in fDx, so save computation
-       local label = torch.FloatTensor(output[{{},1}]:size()):fill(real_label) -- fake labels are real for generator cost
-       if opt.gpu>0 then 
-       	label = label:cuda();
-       end
-       --errG = criterion:forward(output, label)
-       errG=0
-       for i=1,ngen do
-           output=netD:forward(G['netG'..i].output)
-           errG=errG+criterion:forward(output,label)
-           local df_do = criterion:backward(output, label)   
-           df_dg = netD:updateGradInput(fake_AB, df_do):narrow(2,fake_AB:size(2)-output_nc+1, output_nc)
-       end
-    else
-        errG = 0
-    end
-    
-    -- unary loss
-    local df_do_AE = torch.zeros(fake_B:size())
-    if opt.gpu>0 then 
-    	df_do_AE = df_do_AE:cuda();
-    end
-    if opt.use_L1==1 then
-       errL1 = criterionAE:forward(fake_B, real_B)
-       df_do_AE = criterionAE:backward(fake_B, real_B)
-    else
-        errL1 = 0
-    end
-    
-    netG:backward(real_A, df_dg + df_do_AE:mul(opt.lambda))
-    
+    errG=0 
+    for i=1,ngen do
+        if opt.use_GAN==1 then
+           local output = netD.output -- netD:forward{input_A,input_B} was already executed in fDx, so save computation
+           local label = torch.FloatTensor(output[{{},1}]:size()):fill(real_label) -- fake labels are real for generator cost
+           if opt.gpu>0 then 
+           	label = label:cuda();
+           end
+           --errG = criterion:forward(output, label)
+               output=netD:forward(fake_AB[i])
+               errG=errG+criterion:forward(output,label)
+               local df_do = criterion:backward(output, label)   
+               df_dg = netD:updateGradInput(fake_AB[i], df_do):narrow(2,fake_AB[i]:size(2)-output_nc+1, output_nc)
+           
+        else
+            errG = 0
+        end
+        
+        -- unary loss
+        local df_do_AE = torch.zeros(fake_B[i]:size())
+        if opt.gpu>0 then 
+        	df_do_AE = df_do_AE:cuda();
+        end
+        if opt.use_L1==1 then
+           errL1 = criterionAE:forward(fake_B[i], real_B)
+           df_do_AE = criterionAE:backward(fake_B[i], real_B)
+        else
+            errL1 = 0
+        end
+        
+        G['netG'..i]:backward(real_A, df_dg + df_do_AE:mul(opt.lambda))
+    end 
     return errG, gradParametersG
 end
 
@@ -354,20 +357,20 @@ for epoch = 1, opt.niter do
             createRealFake()
             if opt.preprocess == 'colorization' then 
                 local real_A_s = util.scaleBatch(real_A:float(),100,100)
-                local fake_B_s = util.scaleBatch(fake_B:float(),100,100)
                 local real_B_s = util.scaleBatch(real_B:float(),100,100)
                 disp.image(util.deprocessL_batch(real_A_s), {win=opt.display_id, title=opt.name .. ' input'})
                 --disp.image(util.deprocessLAB_batch(real_A_s, fake_B_s), {win=opt.display_id+1, title=opt.name .. ' output'})
                 disp.image(util.deprocessLAB_batch(real_A_s, real_B_s), {win=opt.display_id+1, title=opt.name .. ' target'})
-                for i in 1,ngen do
-                    disp.image(util.deprocess_batch(util.scaleBatch(fake_B[i]:float(),100,100)), {win=opt.display_id+1+i, title=opt.name .. ' output'..i})
+                for i6 = 1,ngen do
+                    local fake_B_s = util.scaleBatch(fake_B[i]:float(),100,100)
+                    disp.image(util.deprocess_batch(util.scaleBatch(fake_B_s:float(),100,100)), {win=opt.display_id+1+i6, title=opt.name .. ' output'..i6})
                 end
            else
                 disp.image(util.deprocess_batch(util.scaleBatch(real_A:float(),100,100)), {win=opt.display_id, title=opt.name .. ' input'})
                 --disp.image(util.deprocess_batch(util.scaleBatch(fake_B:float(),100,100)), {win=opt.display_id+1, title=opt.name .. ' output'})
                 disp.image(util.deprocess_batch(util.scaleBatch(real_B:float(),100,100)), {win=opt.display_id+1, title=opt.name .. ' target'})
-                for i in 1,ngen do
-                    disp.image(util.deprocess_batch(util.scaleBatch(fake_B[i]:float(),100,100)), {win=opt.display_id+1+i, title=opt.name .. ' output'..i})
+                for i6 = 1,ngen do
+                    disp.image(util.deprocess_batch(util.scaleBatch(fake_B[i6]:float(),100,100)), {win=opt.display_id+1+i6, title=opt.name .. ' output'..i6})
                 end
             end
         end
