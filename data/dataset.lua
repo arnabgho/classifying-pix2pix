@@ -145,11 +145,11 @@ function dataset:__init(...)
    local wc = 'wc'
    local cut = 'cut'
    local find = 'find -H'  -- if folder name is symlink, do find inside it after dereferencing
-   if jit.os == 'OSX' then
-      wc = 'gwc'
-      cut = 'gcut'
-      find = 'gfind'
-   end
+   --if jit.os == 'OSX' then
+   --   wc = 'gwc'
+   --   cut = 'gcut'
+   --   find = 'gfind'
+   --end
    ----------------------------------------------------------------------
    -- Options for the GNU find command
    local extensionList = {'jpg', 'png','JPG','PNG','JPEG', 'ppm', 'PPM', 'bmp', 'BMP'}
