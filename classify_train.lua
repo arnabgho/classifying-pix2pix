@@ -389,7 +389,7 @@ for epoch = 1, opt.niter do
             
                 createRealFake()
                 print('save to the disk')
-                for i5 in 1,ngen do
+                for i5 = 1,ngen do
                     dfake_B=fake_B[i5]
                     if opt.preprocess == 'colorization' then 
                         for i2=1, dfake_B:size(1) do
