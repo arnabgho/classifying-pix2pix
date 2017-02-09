@@ -127,7 +127,7 @@ function defineD(input_nc, output_nc, ndf)
         input_nc_tmp = 0 -- only penalizes structure in output channels
     end
     
-    if     opt.which_model_netD == "basic" then netD = defineD_basic(input_nc_tmp, output_nc, ndf)
+    if     opt.which_model_netD == "basic" then netD = defineD_basic_ngen(input_nc_tmp, output_nc, ndf,ngen)
     elseif opt.which_model_netD == "n_layers"  then netD = defineD_n_layers_ngen(input_nc_tmp, output_nc, ndf, opt.n_layers_D ,ngen )
     else error("unsupported netD model")
     end
@@ -270,7 +270,7 @@ local fDx = function(x)
         local df_do = criterion:backward(output, label)
         netD:backward(fake_AB[i], df_do)
     end
-    errD = (errD_real + errD_fake)/2
+    errD = (errD_real + errD_fake)/(ngen+1)
     
     return errD, gradParametersD
 end
@@ -320,6 +320,7 @@ local fGx = function(x)
         
         G['netG'..i]:backward(real_A, df_dg + df_do_AE:mul(opt.lambda))
     end 
+    errG=errG/ngen
     return errG, gradParametersG
 end
 

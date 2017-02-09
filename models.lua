@@ -212,6 +212,10 @@ function defineD_n_layers(input_nc, output_nc, ndf, n_layers)
         return netD
     end
 end
+function defineD_basic_ngen(input_nc, output_nc, ndf,ngen)
+    n_layers = 3
+    return defineD_n_layers_ngen(input_nc, output_nc, ndf, n_layers,ngen)
+end
 
 function defineD_n_layers_ngen(input_nc, output_nc, ndf, n_layers,ngen)
     if n_layers==0 then
@@ -239,7 +243,7 @@ function defineD_n_layers_ngen(input_nc, output_nc, ndf, n_layers,ngen)
         netD:add(nn.SpatialConvolution(ndf * nf_mult_prev, ndf * nf_mult, 4, 4, 1, 1, 1, 1))
         netD:add(nn.SpatialBatchNormalization(ndf * nf_mult)):add(nn.LeakyReLU(0.2, true))
         -- state size: (ndf*M*2) x (N-1) x (N-1)
-        netD:add(nn.SpatialConvolution(ndf * nf_mult, ngen , 4, 4, 1, 1, 1, 1))
+        netD:add(nn.SpatialConvolution(ndf * nf_mult, ngen+1 , 4, 4, 1, 1, 1, 1))
         -- state size: 1 x (N-2) x (N-2)
         
         netD:add(nn.Sigmoid())
