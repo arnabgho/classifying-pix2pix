@@ -276,7 +276,7 @@ local fDx = function(x)
         label:fill(fake_label)
         errD_fake = errD_fake+ criterion:forward(output, label)
 
-        score_D_cache[i]=output:sum()/(4*30*30)
+        score_D_cache[i]=output:reshape(opt.batchSize,4*30*30):sum(2)/(4*30*30)
         sum_score_D=sum_score_D+score_D_cache[i]
         feature_cache[i]=netD.modules[12].output:reshape(opt.batchSize,4*30*30)
         local df_do = criterion:backward(output, label)
