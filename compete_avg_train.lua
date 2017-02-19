@@ -51,6 +51,7 @@ opt = {
    n_layers_D = 0,             -- only used if which_model_netD=='n_layers'
    lambda = 100,               -- weight on L1 term in objective
    ngen = 2 ,                  -- number of generators to add to the game
+   lambda_compete=0.5          -- the weight of the competing objective
 }
 
 -- one-line argument parser. parses enviroment variables to override the defaults
@@ -328,7 +329,7 @@ local fGx = function(x)
            --errG = criterion:forward(output, label) 
            output=netD:forward(fake_AB[i])
            errG=errG+criterion:forward(output,label) + compete_criterion:forward(relu_diff,zero_batch)    
-           local df_do = criterion:backward(output, label) + G.relu:backward( diff , compete_criterion:backward( relu_diff , zero_batch )  ):repeatTensor(opt.batchSize*4*30*30):reshape(output:size() )    
+           local df_do = criterion:backward(output, label) + opt.lambda_compete*G.relu:backward( diff , compete_criterion:backward( relu_diff , zero_batch )  ):repeatTensor(opt.batchSize*4*30*30):reshape(output:size() )    
            df_dg = netD:updateGradInput(fake_AB[i], df_do):narrow(2,fake_AB[i]:size(2)-output_nc+1, output_nc)
            
         else
