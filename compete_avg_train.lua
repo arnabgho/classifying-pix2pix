@@ -51,7 +51,9 @@ opt = {
    n_layers_D = 0,             -- only used if which_model_netD=='n_layers'
    lambda = 100,               -- weight on L1 term in objective
    ngen = 2 ,                  -- number of generators to add to the game
-   lambda_compete=0.5          -- the weight of the competing objective
+   lambda_compete=0.5,          -- the weight of the competing objective
+   ip='129.67.94.239',
+   port=8000
 }
 
 -- one-line argument parser. parses enviroment variables to override the defaults
@@ -222,7 +224,10 @@ local parametersG, gradParametersG = model_utils.combine_all_parameters(G)
 
 
 
-if opt.display then disp = require 'display' end
+if opt.display then 
+	disp = require 'display' 
+	disp.configure({hostname=opt.ip,port=opt.port})
+end
 
 
 function createRealFake()
@@ -267,7 +272,7 @@ local fDx = function(x)
     if opt.gpu>0 then 
     	label = label:cuda()
     end
-    
+    sum_score_D:zero()    
     local errD_real = criterion:forward(output, label)
     local df_do = criterion:backward(output, label)
     netD:backward(real_AB, df_do)
