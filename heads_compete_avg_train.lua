@@ -154,13 +154,13 @@ else
   print('define model netG...')
 --  G={}
 --  G.netG1 = defineG(input_nc, output_nc, ngf)
---  G.relu=nn.ReLU()
---  G.cosine=nn.CosineDistance()
 --  for i=2,ngen do
 --      G['netG'..i]=G.netG1:clone()
 --      G['netG'..i]:apply(weights_init)
 --  end
   G=defineG(input_nc,output_nc,ngf,ngen)
+  G.relu=nn.ReLU()
+  G.cosine=nn.CosineDistance()
   print('define model netD...')
   netD = defineD(input_nc, output_nc, ndf)
 end
