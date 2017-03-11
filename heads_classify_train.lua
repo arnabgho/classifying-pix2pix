@@ -106,17 +106,18 @@ local ngf = opt.ngf
 local real_label = ngen + 1
 local fake_labels = torch.linspace(1,ngen,ngen)
 
-function defineG(input_nc, output_nc, ngf)
-    local netG = nil
-    if     opt.which_model_netG == "encoder_decoder" then netG = defineG_encoder_decoder(input_nc, output_nc, ngf)
-    elseif opt.which_model_netG == "unet" then netG = defineG_unet(input_nc, output_nc, ngf)
-    elseif opt.which_model_netG == "unet_128" then netG = defineG_unet_128(input_nc, output_nc, ngf)
+function defineG(input_nc, output_nc, ngf,ngen)
+    local G = nil
+    if     opt.which_model_netG == "encoder_decoder" then G = defineG_encoder_decoder_heads(input_nc, output_nc, ngf,ngen)
+    elseif opt.which_model_netG == "unet" then G = defineG_unet_heads(input_nc, output_nc, ngf,ngen)
+    elseif opt.which_model_netG == "unet_128" then G = defineG_unet_128_heads(input_nc, output_nc, ngf,ngen)
     else error("unsupported netG model")
     end
    
-    netG:apply(weights_init)
-  
-    return netG
+    for i=1,ngen do
+        G['netG'..i]:apply(weights_init)
+    end
+    return G
 end
 
 function defineD(input_nc, output_nc, ndf)
@@ -147,13 +148,14 @@ if opt.continue_train == 1 then
    netD = util.load(paths.concat(opt.checkpoints_dir, opt.name, 'latest_net_D.t7'), opt)
 else
   print('define model netG...')
-  G={}
-  G.netG1 = defineG(input_nc, output_nc, ngf)
-  print(G.netG1)
-  for i=2,ngen do
-      G['netG'..i]=G.netG1:clone()
-      G['netG'..i]:apply(weights_init)
-  end
+--  G={}
+--  G.netG1 = defineG(input_nc, output_nc, ngf)
+--  print(G.netG1)
+--  for i=2,ngen do
+--      G['netG'..i]=G.netG1:clone()
+--      G['netG'..i]:apply(weights_init)
+--  end
+  G=defineG(input_nc,output_nc,ngf,ngen)
   print('define model netD...')
   netD = defineD(input_nc, output_nc, ndf)
 end

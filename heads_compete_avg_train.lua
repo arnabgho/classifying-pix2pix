@@ -51,6 +51,9 @@ opt = {
    n_layers_D = 0,             -- only used if which_model_netD=='n_layers'
    lambda = 100,               -- weight on L1 term in objective
    ngen = 2 ,                  -- number of generators to add to the game
+   lambda_compete=0.5,          -- the weight of the competing objective
+   ip='129.67.94.239',
+   port=8000
 }
 
 -- one-line argument parser. parses enviroment variables to override the defaults
@@ -103,20 +106,22 @@ end
 
 local ndf = opt.ndf
 local ngf = opt.ngf
-local real_label = ngen + 1
-local fake_labels = torch.linspace(1,ngen,ngen)
+local real_label =  1
+local fake_label = 0
 
-function defineG(input_nc, output_nc, ngf)
-    local netG = nil
-    if     opt.which_model_netG == "encoder_decoder" then netG = defineG_encoder_decoder(input_nc, output_nc, ngf)
-    elseif opt.which_model_netG == "unet" then netG = defineG_unet(input_nc, output_nc, ngf)
-    elseif opt.which_model_netG == "unet_128" then netG = defineG_unet_128(input_nc, output_nc, ngf)
+
+function defineG(input_nc, output_nc, ngf,ngen)
+    local G = nil
+    if     opt.which_model_netG == "encoder_decoder" then G = defineG_encoder_decoder_heads(input_nc, output_nc, ngf,ngen)
+    elseif opt.which_model_netG == "unet" then G = defineG_unet_heads(input_nc, output_nc, ngf,ngen)
+    elseif opt.which_model_netG == "unet_128" then G = defineG_unet_128_heads(input_nc, output_nc, ngf,ngen)
     else error("unsupported netG model")
     end
    
-    netG:apply(weights_init)
-  
-    return netG
+    for i=1,ngen do
+        G['netG'..i]:apply(weights_init)
+    end
+    return G
 end
 
 function defineD(input_nc, output_nc, ndf)
@@ -127,8 +132,8 @@ function defineD(input_nc, output_nc, ndf)
         input_nc_tmp = 0 -- only penalizes structure in output channels
     end
     
-    if     opt.which_model_netD == "basic" then netD = defineD_basic_ngen(input_nc_tmp, output_nc, ndf,ngen)
-    elseif opt.which_model_netD == "n_layers"  then netD = defineD_n_layers_ngen(input_nc_tmp, output_nc, ndf, opt.n_layers_D ,ngen )
+    if     opt.which_model_netD == "basic" then netD = defineD_basic(input_nc_tmp, output_nc, ndf)
+    elseif opt.which_model_netD == "n_layers"  then netD = defineD_n_layers(input_nc_tmp, output_nc, ndf, opt.n_layers_D )
     else error("unsupported netD model")
     end
     
@@ -147,13 +152,15 @@ if opt.continue_train == 1 then
    netD = util.load(paths.concat(opt.checkpoints_dir, opt.name, 'latest_net_D.t7'), opt)
 else
   print('define model netG...')
-  G={}
-  G.netG1 = defineG(input_nc, output_nc, ngf)
-  print(G.netG1)
-  for i=2,ngen do
-      G['netG'..i]=G.netG1:clone()
-      G['netG'..i]:apply(weights_init)
-  end
+--  G={}
+--  G.netG1 = defineG(input_nc, output_nc, ngf)
+--  G.relu=nn.ReLU()
+--  G.cosine=nn.CosineDistance()
+--  for i=2,ngen do
+--      G['netG'..i]=G.netG1:clone()
+--      G['netG'..i]:apply(weights_init)
+--  end
+  G=defineG(input_nc,output_nc,ngf,ngen)
   print('define model netD...')
   netD = defineD(input_nc, output_nc, ndf)
 end
@@ -162,9 +169,10 @@ end
 --print(netD)
 
 
---local criterion = nn.BCECriterion()
-local criterion=cudnn.SpatialCrossEntropyCriterion()
+local criterion = nn.BCECriterion()
+--local criterion=cudnn.SpatialCrossEntropyCriterion()
 local criterionAE = nn.AbsCriterion()
+local compete_criterion=nn.AbsCriterion()
 ---------------------------------------------------------------------------
 optimStateG = {
    learningRate = opt.lr,
@@ -184,6 +192,10 @@ local errD, errG, errL1 = 0, 0, 0
 local epoch_tm = torch.Timer()
 local tm = torch.Timer()
 local data_tm = torch.Timer()
+local score_D_cache=torch.Tensor(ngen,opt.batchSize )
+local feature_cache=torch.Tensor(ngen,opt.batchSize,1*30*30)
+local sum_score_D=torch.Tensor(opt.batchSize)
+
 ----------------------------------------------------------------------------
 
 if opt.gpu > 0 then
@@ -193,6 +205,7 @@ if opt.gpu > 0 then
    real_A = real_A:cuda();
    real_B = real_B:cuda(); fake_B = fake_B:cuda();
    real_AB = real_AB:cuda(); fake_AB = fake_AB:cuda();
+   score_D_cache=score_D_cache:cuda(); feature_cache=feature_cache:cuda(); sum_score_D=sum_score_D:cuda();
    if opt.cudnn==1 then
       --netG = util.cudnn(netG); 
       netD = util.cudnn(netD);
@@ -200,7 +213,7 @@ if opt.gpu > 0 then
           G[k]=util.cudnn(net)
       end
    end
-   netD:cuda();  criterion:cuda(); criterionAE:cuda();
+   netD:cuda();  criterion:cuda(); criterionAE:cuda(); compete_criterion:cuda()
    for k,net in pairs(G) do net:cuda() end
    print('done')
 else
@@ -214,7 +227,10 @@ local parametersG, gradParametersG = model_utils.combine_all_parameters(G)
 
 
 
-if opt.display then disp = require 'display' end
+if opt.display then 
+	disp = require 'display' 
+	disp.configure({hostname=opt.ip,port=opt.port})
+end
 
 
 function createRealFake()
@@ -259,7 +275,7 @@ local fDx = function(x)
     if opt.gpu>0 then 
     	label = label:cuda()
     end
-    
+    sum_score_D:zero()    
     local errD_real = criterion:forward(output, label)
     local df_do = criterion:backward(output, label)
     netD:backward(real_AB, df_do)
@@ -267,14 +283,30 @@ local fDx = function(x)
     -- Fake
     for i=1,ngen do
         local output = netD:forward(fake_AB[i])
-        label:fill(fake_labels[i])
+        label:fill(fake_label)
         errD_fake = errD_fake+ criterion:forward(output, label)
+        score_D_cache[i]=output:reshape(opt.batchSize,1*30*30):sum(2)/(1*30*30)
+        sum_score_D=sum_score_D+score_D_cache[i]
+        feature_cache[i]=netD.modules[12].output:reshape(opt.batchSize,1*30*30)
         local df_do = criterion:backward(output, label)
         netD:backward(fake_AB[i], df_do)
     end
     errD = (errD_real + errD_fake)/(ngen+1)
     
     return errD, gradParametersD
+end
+
+local cosine_distance=function(feature_cache,k)
+    local result=torch.Tensor(sum_score_D:size()):fill(0):cuda()
+    for i=1,ngen do
+        if i==k then
+            goto continue
+        else
+            result=result+G.cosine:forward({ feature_cache[k],feature_cache[i]})
+        end
+        ::continue::
+    end
+    return result
 end
 
 -- create closure to evaluate f(X) and df/dX of generator
@@ -298,11 +330,20 @@ local fGx = function(x)
            if opt.gpu>0 then 
            	label = label:cuda();
            end
-           --errG = criterion:forward(output, label)
-               output=netD:forward(fake_AB[i])
-               errG=errG+criterion:forward(output,label)
-               local df_do = criterion:backward(output, label)   
-               df_dg = netD:updateGradInput(fake_AB[i], df_do):narrow(2,fake_AB[i]:size(2)-output_nc+1, output_nc)
+           local zero_batch=torch.Tensor(sum_score_D:size()):zero():cuda()
+           local diff=ngen*score_D_cache[i]-sum_score_D-cosine_distance(feature_cache,i)
+           diff=diff:cuda()
+           diff= -diff/(ngen-1)
+           local relu_diff=G.relu:forward(diff)
+           relu_diff=relu_diff:cuda()
+           --errG = criterion:forward(output, label) 
+           output=netD:forward(fake_AB[i])
+           errG=errG+criterion:forward(output,label) + compete_criterion:forward(relu_diff,zero_batch)   
+           local compete_df_do=G.relu:backward( diff , compete_criterion:backward( relu_diff , zero_batch )  )
+           compete_df_do=compete_df_do:repeatTensor(opt.batchSize*1*30*30):cuda()
+           compete_df_do=compete_df_do:reshape( output:size() )
+           local df_do = criterion:backward(output, label) + opt.lambda_compete*compete_df_do
+           df_dg = netD:updateGradInput(fake_AB[i], df_do):narrow(2,fake_AB[i]:size(2)-output_nc+1, output_nc)
            
         else
             errG = 0
