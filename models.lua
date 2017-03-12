@@ -143,7 +143,11 @@ function defineG_unet_heads(input_nc, output_nc, ngf,ngen)
     netG=nn.gModule({e1},{d7})
     for i=1,ngen do
         G['netG'..i]=nn.Sequential()
-        G['netG'..i]:add(netG:clone('weight','bias','gradWeight','gradBias'))
+        if i==1 then 
+            G['netG'..i]:add(netG)
+        else
+            G['netG'..i]:add(netG:clone('weight','bias','gradWeight','gradBias'))
+        end
         --local d7=d7_clone:clone('weight','bias','gradWeight','gradBias')
         G['netG'..i]:add(nn.ReLU(true))
         G['netG'..i]:add(nn.SpatialFullConvolution(ngf*2,output_nc,4,4,2,2,1,1))
