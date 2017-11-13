@@ -50,7 +50,9 @@ opt = {
    which_model_netG = 'unet',  -- selects model to use for netG
    n_layers_D = 0,             -- only used if which_model_netD=='n_layers'
    lambda = 100,               -- weight on L1 term in objective
-   ngen = 2 ,                  -- number of generators to add to the game
+   ngen = 3 ,                  -- number of generators to add to the game
+   ip='129.67.95.223',
+   port=8000
 }
 
 -- one-line argument parser. parses enviroment variables to override the defaults
@@ -214,7 +216,10 @@ local parametersG, gradParametersG = model_utils.combine_all_parameters(G)
 
 
 
-if opt.display then disp = require 'display' end
+if opt.display then 
+    disp = require 'display' 
+    disp.configure({hostname=opt.ip, port=opt.port})
+end
 
 
 function createRealFake()
