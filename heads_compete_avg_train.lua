@@ -50,9 +50,9 @@ opt = {
    which_model_netG = 'unet',  -- selects model to use for netG
    n_layers_D = 0,             -- only used if which_model_netD=='n_layers'
    lambda = 100,               -- weight on L1 term in objective
-   ngen = 2 ,                  -- number of generators to add to the game
+   ngen = 3 ,                  -- number of generators to add to the game
    lambda_compete=0.5,          -- the weight of the competing objective
-   ip='129.67.94.239',
+   ip='129.67.94.233',
    port=8000
 }
 
