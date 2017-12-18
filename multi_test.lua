@@ -78,7 +78,7 @@ local target = torch.FloatTensor(opt.batchSize,3,opt.fineSize,opt.fineSize)
 print('checkpoints_dir', opt.checkpoints_dir)
 --local netG = util.load(paths.concat(opt.checkpoints_dir, opt.netG_name .. '.t7'), opt)
 
-G=torch.load(  paths.concat(opt.checkpoints_dir, opt.name, 'latest_net_G.t7'), 'binary' )
+G=torch.load(  paths.concat(opt.checkpoints_dir, opt.name, 'latest_net_G_test.t7'), 'binary' )
 
 --for gen_id=1,opt.ngen do
 --    G['netG'..gen_id]:evaluate()

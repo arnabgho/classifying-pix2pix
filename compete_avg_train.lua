@@ -49,9 +49,9 @@ opt = {
    which_model_netD = 'basic', -- selects model to use for netD
    which_model_netG = 'unet',  -- selects model to use for netG
    n_layers_D = 0,             -- only used if which_model_netD=='n_layers'
-   lambda = 100,               -- weight on L1 term in objective
+   lambda = 10,               -- weight on L1 term in objective
    ngen = 3 ,                  -- number of generators to add to the game
-   lambda_compete=0.5,          -- the weight of the competing objective
+   lambda_compete=0.001,          -- the weight of the competing objective
    ip='129.67.94.233',
    port=8000
 }
@@ -335,7 +335,7 @@ local fGx = function(x)
            relu_diff=relu_diff:cuda()
            --errG = criterion:forward(output, label) 
            output=netD:forward(fake_AB[i])
-           errG=errG+criterion:forward(output,label) + compete_criterion:forward(relu_diff,zero_batch)   
+           errG=errG+criterion:forward(output,label) +opt.lambda_compete*compete_criterion:forward(relu_diff,zero_batch)   
            local compete_df_do=G.relu:backward( diff , compete_criterion:backward( relu_diff , zero_batch )  )
            compete_df_do=compete_df_do:repeatTensor(opt.batchSize*1*30*30):cuda()
            compete_df_do=compete_df_do:reshape( output:size() )
